@@ -59,6 +59,6 @@ func (m *MockClient) IsRunning(name string) (bool, error) {
 	return m.RunningDomains[name], nil
 }
 
-func (m *MockClient) GetIP(name string) (string, error) {
+func (m *MockClient) GetIP(name, _ string) (string, error) {
 	return m.DomainIPs[name], nil
 }

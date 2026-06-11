@@ -9,5 +9,5 @@ type Client interface {
 	Shutdown(name string) error
 	Reboot(name string) error
 	IsRunning(name string) (bool, error)
-	GetIP(name string) (string, error)
+	GetIP(name, mac string) (string, error)
 }

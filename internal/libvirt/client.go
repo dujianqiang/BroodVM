@@ -4,6 +4,8 @@ package libvirt
 
 import (
 	"fmt"
+	"os"
+	"strings"
 
 	golibvirt "libvirt.org/go/libvirt"
 )
@@ -87,22 +89,58 @@ func (c *LibvirtClient) IsRunning(name string) (bool, error) {
 	return state == golibvirt.DOMAIN_RUNNING, nil
 }
 
-func (c *LibvirtClient) GetIP(name string) (string, error) {
+func (c *LibvirtClient) GetIP(name, mac string) (string, error) {
 	dom, err := c.conn.LookupDomainByName(name)
 	if err != nil {
 		return "", err
 	}
 	defer dom.Free()
-	ifaces, err := dom.ListAllInterfaceAddresses(golibvirt.DOMAIN_INTERFACE_ADDRESSES_SRC_LEASE)
+
+	// 1. dnsmasq lease（NAT 模式）
+	if ip := ipFromLibvirt(dom, golibvirt.DOMAIN_INTERFACE_ADDRESSES_SRC_LEASE); ip != "" {
+		return ip, nil
+	}
+	// 2. qemu-guest-agent（桥接模式，需 VM 内安装 guest agent）
+	if ip := ipFromLibvirt(dom, golibvirt.DOMAIN_INTERFACE_ADDRESSES_SRC_AGENT); ip != "" {
+		return ip, nil
+	}
+	// 3. 宿主机 ARP 表（桥接模式通用 fallback，通过 MAC 匹配）
+	if mac != "" {
+		if ip := ipFromARP(mac); ip != "" {
+			return ip, nil
+		}
+	}
+	return "", nil
+}
+
+func ipFromLibvirt(dom interface {
+	ListAllInterfaceAddresses(golibvirt.DomainInterfaceAddressesSource) ([]golibvirt.DomainInterface, error)
+}, src golibvirt.DomainInterfaceAddressesSource) string {
+	ifaces, err := dom.ListAllInterfaceAddresses(src)
 	if err != nil {
-		return "", nil // dnsmasq lease 可能还未就绪，不算错误
+		return ""
 	}
 	for _, iface := range ifaces {
 		for _, addr := range iface.Addrs {
 			if addr.Type == golibvirt.IP_ADDR_TYPE_IPV4 && addr.Addr != "127.0.0.1" {
-				return addr.Addr, nil
+				return addr.Addr
 			}
 		}
 	}
-	return "", nil
+	return ""
+}
+
+// ipFromARP 在 /proc/net/arp 中按 MAC 地址查找 IP（桥接模式无 DHCP lease 时使用）。
+func ipFromARP(mac string) string {
+	data, err := os.ReadFile("/proc/net/arp")
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n")[1:] {
+		fields := strings.Fields(line)
+		if len(fields) >= 4 && strings.EqualFold(fields[3], mac) {
+			return fields[0]
+		}
+	}
+	return ""
 }

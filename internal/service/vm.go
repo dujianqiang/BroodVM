@@ -154,7 +154,7 @@ func (s *VMService) runCreate(vm *store.VM, taskID string) {
 		time.Sleep(5 * time.Second)
 		running, _ := s.virt.IsRunning(vm.Name)
 		if running {
-			vmIP, _ = s.virt.GetIP(vm.Name)
+			vmIP, _ = s.virt.GetIP(vm.Name, vm.MAC)
 			if vmIP != "" {
 				break
 			}
