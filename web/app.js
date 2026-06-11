@@ -24,7 +24,7 @@ function pollTask(taskId, onProgress, done) {
         clearInterval(interval);
         done(t);
       }
-    }).fail(() => { clearInterval(interval); done({status:'failed',message:'网络错误'}); });
+    }).fail(() => { clearInterval(interval); done({Status:'failed',Message:'网络错误'}); });
   }, 2000);
 }
 

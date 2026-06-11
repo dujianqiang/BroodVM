@@ -84,6 +84,15 @@ func main() {
 			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 			return
 		}
+		// 若静态文件存在则直接服务，否则回退到 index.html（SPA 路由）
+		filePath := strings.TrimPrefix(c.Request.URL.Path, "/")
+		if filePath != "" {
+			if f, err := subFS.Open(filePath); err == nil {
+				f.Close()
+				fileServer.ServeHTTP(c.Writer, c.Request)
+				return
+			}
+		}
 		c.Request.URL.Path = "/"
 		fileServer.ServeHTTP(c.Writer, c.Request)
 	})
