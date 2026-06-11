@@ -216,7 +216,10 @@ VM 标准分两层：
 host:
   bridge: br0
   image_dir: /var/lib/libvirt/images
-  seed_image: /var/lib/libvirt/images/jammy-server-cloudimg-amd64.img
+  seed_image:
+    # URL 或本地路径二选一
+    source: "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
+    # source: "/data/images/jammy-server-cloudimg-amd64.img"
   ssh_key: /root/.ssh/id_ed25519
 
 server:
@@ -226,6 +229,14 @@ auth:
   username: admin
   password: admin
 ```
+
+**种子镜像加载逻辑（启动时）：**
+
+1. 判断 `source` 是否以 `http://` 或 `https://` 开头
+2. **URL**：检查 `image_dir` 下是否已有同名文件，已有则跳过，否则下载
+3. **本地路径**：验证文件存在，不存在则启动失败并报错
+
+管理页面"系统设置"可在线修改 `source`，修改后重新触发上述逻辑。
 
 ---
 
@@ -267,6 +278,10 @@ DELETE /api/standards/:id          # 删除模板
 
 # 宿主机能力
 GET    /api/host/capabilities      # 返回宿主机支持的网络/CPU/hugepages 能力
+
+# 系统设置
+GET    /api/settings               # 获取当前配置（含种子镜像来源）
+PUT    /api/settings               # 更新配置（如修改 seed_image.source）
 
 # 前端（embed）
 GET    /*                          # 返回 index.html
@@ -346,6 +361,7 @@ broodvm/
 | 创建 VM | `#/vms/new` | 选模板 → 标准参数表单 → 高级参数（折叠）→ 创建进度条 |
 | VM 详情 | `#/vms/:id` | 基本信息 + XML 编辑器 + 软件安装 + 安装历史 |
 | 标准模板 | `#/standards` | 模板列表 + 新建/编辑/删除 |
+| 系统设置 | `#/settings` | 种子镜像来源（URL/本地路径）+ 其他宿主机配置 |
 
 **创建 VM 表单交互：**
 1. 顶部下拉选择模板（默认选"默认"），选后自动填充所有参数
