@@ -64,12 +64,13 @@ type CreateVMReq struct {
 
 // Create 创建 VM 记录和 task 记录，启动异步 goroutine，返回 task_id。
 func (s *VMService) Create(req CreateVMReq) (string, error) {
+	s.mu.Lock()
 	vncPort, err := s.vmStore.NextVNCPort()
 	if err != nil {
+		s.mu.Unlock()
 		return "", fmt.Errorf("alloc vnc port: %w", err)
 	}
 
-	s.mu.Lock()
 	if req.NetworkType == "bridge" && req.IP == "" {
 		if len(s.cfg.Host.IPPool.IPs) > 0 {
 			ip, err := s.findFreePoolIP()
