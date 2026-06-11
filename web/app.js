@@ -20,7 +20,7 @@ function pollTask(taskId, onProgress, done) {
   const interval = setInterval(() => {
     API.task(taskId).done(t => {
       onProgress && onProgress(t);
-      if (t.status === 'success' || t.status === 'failed') {
+      if (t.Status === 'success' || t.Status === 'failed') {
         clearInterval(interval);
         done(t);
       }
@@ -130,11 +130,11 @@ function renderNew() {
     API.create(data).done(r => {
       $('#progress-area').show();
       pollTask(r.task_id, t => {
-        $('#prog-bar').val(t.progress);
-        $('#prog-msg').text(t.message);
+        $('#prog-bar').val(t.Progress);
+        $('#prog-msg').text(t.Message);
       }, t => {
-        if (t.status === 'success') navigate('/');
-        else { alert('创建失败：' + t.message); $('button[type=submit]').prop('disabled', false); }
+        if (t.Status === 'success') navigate('/');
+        else { alert('创建失败：' + t.Message); $('button[type=submit]').prop('disabled', false); }
       });
     }).fail(r => {
       alert(r.responseJSON?.error || '请求失败');
