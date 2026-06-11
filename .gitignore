@@ -2,3 +2,5 @@ broodvm
 broodvm.exe
 broodvm.db
 *.iso
+.claude/
+docs/src/
