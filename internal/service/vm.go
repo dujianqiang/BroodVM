@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"text/template"
 	"time"
 
@@ -25,6 +26,7 @@ type VMService struct {
 	virt      lv.Client
 	seedImage string
 	tmpl      *template.Template
+	mu        sync.Mutex
 }
 
 func NewVMService(
@@ -67,6 +69,22 @@ func (s *VMService) Create(req CreateVMReq) (string, error) {
 		return "", fmt.Errorf("alloc vnc port: %w", err)
 	}
 
+	s.mu.Lock()
+	if req.NetworkType == "bridge" && req.IP == "" {
+		if len(s.cfg.Host.IPPool.IPs) > 0 {
+			ip, err := s.findFreePoolIP()
+			if err != nil {
+				s.mu.Unlock()
+				return "", err
+			}
+			req.IP = ip
+			req.Gateway = s.cfg.Host.IPPool.Gateway
+			if req.DNS == "" {
+				req.DNS = s.cfg.Host.IPPool.DNS
+			}
+		}
+	}
+
 	vmID := uuid.NewString()
 	taskID := uuid.NewString()
 	now := time.Now().UTC()
@@ -87,8 +105,10 @@ func (s *VMService) Create(req CreateVMReq) (string, error) {
 		CreatedAt:   now,
 	}
 	if err := s.vmStore.Create(vm); err != nil {
+		s.mu.Unlock()
 		return "", fmt.Errorf("create vm record: %w", err)
 	}
+	s.mu.Unlock()
 
 	task := &store.Task{
 		ID: taskID, Type: "create_vm", RefID: vmID,
@@ -419,4 +439,24 @@ func (s *VMService) SyncRunningIPs() {
 		}
 	}
 }
+// findFreePoolIP 在 s.mu 持有期间调用，返回池中第一个未被活跃 VM 占用的 IP。
+func (s *VMService) findFreePoolIP() (string, error) {
+	vms, err := s.vmStore.List()
+	if err != nil {
+		return "", err
+	}
+	used := make(map[string]bool, len(vms))
+	for _, vm := range vms {
+		if vm.IP != "" {
+			used[vm.IP] = true
+		}
+	}
+	for _, ip := range s.cfg.Host.IPPool.IPs {
+		if !used[ip] {
+			return ip, nil
+		}
+	}
+	return "", fmt.Errorf("IP 池已耗尽，请扩充配置")
+}
+
 func (s *VMService) GetTask(id string) (*store.Task, error) { return s.taskStore.Get(id) }

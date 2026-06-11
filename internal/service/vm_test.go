@@ -136,3 +136,96 @@ func TestVMService_CreateRecordsTask(t *testing.T) {
 		t.Errorf("task type = %q, want create_vm", task.Type)
 	}
 }
+
+func TestCreate_BridgeAutoAssignsPoolIP(t *testing.T) {
+	vs, ts, mock, cfg := newTestDeps(t)
+	cfg.Host.IPPool.Gateway = "192.168.1.1"
+	cfg.Host.IPPool.DNS = "8.8.8.8"
+	cfg.Host.IPPool.IPs = []string{"192.168.1.100/24", "192.168.1.101/24"}
+	svc := service.NewVMService(cfg, vs, ts, mock, "/tmp/seed.img")
+
+	_, err := svc.Create(service.CreateVMReq{
+		Name: "vm-b1", VCPU: 1, MemoryGB: 1, DiskGB: 10, NetworkType: "bridge",
+	})
+	if err != nil {
+		t.Fatalf("Create vm-b1: %v", err)
+	}
+	_, err = svc.Create(service.CreateVMReq{
+		Name: "vm-b2", VCPU: 1, MemoryGB: 1, DiskGB: 10, NetworkType: "bridge",
+	})
+	if err != nil {
+		t.Fatalf("Create vm-b2: %v", err)
+	}
+
+	vms, _ := vs.List()
+	if len(vms) != 2 {
+		t.Fatalf("expected 2 vms, got %d", len(vms))
+	}
+	seen := make(map[string]bool)
+	for _, vm := range vms {
+		if vm.IP == "" {
+			t.Errorf("vm %s has no IP", vm.Name)
+		}
+		if seen[vm.IP] {
+			t.Errorf("duplicate IP %s", vm.IP)
+		}
+		seen[vm.IP] = true
+	}
+	if !seen["192.168.1.100/24"] || !seen["192.168.1.101/24"] {
+		t.Errorf("expected both pool IPs assigned, got %v", seen)
+	}
+}
+
+func TestCreate_BridgePoolExhausted(t *testing.T) {
+	vs, ts, mock, cfg := newTestDeps(t)
+	cfg.Host.IPPool.Gateway = "192.168.1.1"
+	cfg.Host.IPPool.IPs = []string{"192.168.1.100/24"}
+	svc := service.NewVMService(cfg, vs, ts, mock, "/tmp/seed.img")
+
+	_, err := svc.Create(service.CreateVMReq{
+		Name: "vm-b1", VCPU: 1, MemoryGB: 1, DiskGB: 10, NetworkType: "bridge",
+	})
+	if err != nil {
+		t.Fatalf("Create vm-b1: %v", err)
+	}
+	_, err = svc.Create(service.CreateVMReq{
+		Name: "vm-b2", VCPU: 1, MemoryGB: 1, DiskGB: 10, NetworkType: "bridge",
+	})
+	if err == nil {
+		t.Fatal("expected error when pool exhausted, got nil")
+	}
+}
+
+func TestCreate_BridgeIPReuseAfterDelete(t *testing.T) {
+	vs, ts, mock, cfg := newTestDeps(t)
+	cfg.Host.IPPool.Gateway = "192.168.1.1"
+	cfg.Host.IPPool.IPs = []string{"192.168.1.100/24"}
+	svc := service.NewVMService(cfg, vs, ts, mock, "/tmp/seed.img")
+
+	_, err := svc.Create(service.CreateVMReq{
+		Name: "vm-b1", VCPU: 1, MemoryGB: 1, DiskGB: 10, NetworkType: "bridge",
+	})
+	if err != nil {
+		t.Fatalf("Create vm-b1: %v", err)
+	}
+
+	// 模拟删除：将 vm-b1 的 status 置为 deleted
+	vms, _ := vs.List()
+	vs.UpdateStatus(vms[0].ID, "deleted", "")
+
+	// 现在池里的 IP 应该可以被复用
+	_, err = svc.Create(service.CreateVMReq{
+		Name: "vm-b2", VCPU: 1, MemoryGB: 1, DiskGB: 10, NetworkType: "bridge",
+	})
+	if err != nil {
+		t.Fatalf("Create vm-b2 after delete: %v", err)
+	}
+	// vm-b1 已 deleted，List() 不返回它
+	vms2, _ := vs.List()
+	if len(vms2) != 1 || vms2[0].Name != "vm-b2" {
+		t.Fatalf("expected 1 vm (vm-b2), got %v", vms2)
+	}
+	if vms2[0].IP != "192.168.1.100/24" {
+		t.Errorf("vm-b2 ip = %q, want 192.168.1.100/24", vms2[0].IP)
+	}
+}
