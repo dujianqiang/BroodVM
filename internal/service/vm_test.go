@@ -36,15 +36,36 @@ func TestVMService_Start(t *testing.T) {
 	}
 	vs.Create(vm)
 
-	if err := svc.Start("vm-id-1"); err != nil {
+	taskID, err := svc.Start("vm-id-1")
+	if err != nil {
 		t.Fatalf("Start: %v", err)
+	}
+	if taskID == "" {
+		t.Fatal("taskID should not be empty")
+	}
+	task, err := ts.Get(taskID)
+	if err != nil {
+		t.Fatalf("Get task: %v", err)
+	}
+	if task.Type != "start_vm" {
+		t.Errorf("task type = %q, want start_vm", task.Type)
+	}
+
+	// 等待后台 goroutine 完成
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		time.Sleep(100 * time.Millisecond)
+		task, _ = ts.Get(taskID)
+		if task.Status == "success" || task.Status == "failed" {
+			break
+		}
+	}
+	if task.Status != "success" {
+		t.Errorf("task status = %q, want success", task.Status)
 	}
 	got, _ := vs.Get("vm-id-1")
 	if got.Status != "running" {
-		t.Errorf("status = %q, want running", got.Status)
-	}
-	if !mock.RunningDomains["vm-test"] {
-		t.Error("mock: domain should be marked as running")
+		t.Errorf("vm status = %q, want running", got.Status)
 	}
 }
 
@@ -61,12 +82,30 @@ func TestVMService_Stop(t *testing.T) {
 	}
 	vs.Create(vm)
 
-	if err := svc.Stop("vm-id-2"); err != nil {
+	taskID, err := svc.Stop("vm-id-2")
+	if err != nil {
 		t.Fatalf("Stop: %v", err)
+	}
+	if taskID == "" {
+		t.Fatal("taskID should not be empty")
+	}
+
+	// 等待后台 goroutine 完成
+	deadline := time.Now().Add(5 * time.Second)
+	var task *store.Task
+	for time.Now().Before(deadline) {
+		time.Sleep(100 * time.Millisecond)
+		task, _ = ts.Get(taskID)
+		if task.Status == "success" || task.Status == "failed" {
+			break
+		}
+	}
+	if task.Status != "success" {
+		t.Errorf("task status = %q, want success", task.Status)
 	}
 	got, _ := vs.Get("vm-id-2")
 	if got.Status != "stopped" {
-		t.Errorf("status = %q, want stopped", got.Status)
+		t.Errorf("vm status = %q, want stopped", got.Status)
 	}
 }
 

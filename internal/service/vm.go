@@ -217,37 +217,124 @@ func (s *VMService) runDelete(vm *store.VM, taskID string) {
 	s.taskStore.Update(taskID, "success", 100, "虚拟机已删除")
 }
 
-func (s *VMService) Start(vmID string) error {
+func (s *VMService) Start(vmID string) (string, error) {
 	vm, err := s.vmStore.Get(vmID)
 	if err != nil {
-		return err
+		return "", err
 	}
+	taskID := uuid.NewString()
+	task := &store.Task{
+		ID: taskID, Type: "start_vm", RefID: vmID,
+		Status: "running", Progress: 0, Message: "正在启动...",
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := s.taskStore.Create(task); err != nil {
+		return "", err
+	}
+	go s.runStart(vm, taskID)
+	return taskID, nil
+}
+
+func (s *VMService) runStart(vm *store.VM, taskID string) {
+	fail := func(msg string) {
+		s.taskStore.Update(taskID, "failed", 0, msg)
+		s.vmStore.UpdateStatus(vm.ID, "stopped", vm.IP)
+	}
+
+	s.taskStore.Update(taskID, "running", 20, "正在发送启动指令...")
 	if err := s.virt.Start(vm.Name); err != nil {
-		return err
+		fail("启动失败: " + err.Error())
+		return
 	}
-	return s.vmStore.UpdateStatus(vmID, "running", vm.IP)
+
+	s.taskStore.Update(taskID, "running", 50, "等待虚拟机就绪...")
+	deadline := time.Now().Add(2 * time.Minute)
+	for time.Now().Before(deadline) {
+		time.Sleep(3 * time.Second)
+		if running, _ := s.virt.IsRunning(vm.Name); running {
+			s.vmStore.UpdateStatus(vm.ID, "running", vm.IP)
+			s.taskStore.Update(taskID, "success", 100, "虚拟机已启动")
+			return
+		}
+	}
+	fail("启动超时")
 }
 
-func (s *VMService) Stop(vmID string) error {
+func (s *VMService) Stop(vmID string) (string, error) {
 	vm, err := s.vmStore.Get(vmID)
 	if err != nil {
-		return err
+		return "", err
 	}
+	taskID := uuid.NewString()
+	task := &store.Task{
+		ID: taskID, Type: "stop_vm", RefID: vmID,
+		Status: "running", Progress: 0, Message: "正在关机...",
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := s.taskStore.Create(task); err != nil {
+		return "", err
+	}
+	go s.runStop(vm, taskID)
+	return taskID, nil
+}
+
+func (s *VMService) runStop(vm *store.VM, taskID string) {
+	s.taskStore.Update(taskID, "running", 20, "正在发送关机指令...")
 	if err := s.virt.Shutdown(vm.Name); err != nil {
-		return err
+		s.taskStore.Update(taskID, "failed", 0, "关机失败: "+err.Error())
+		return
 	}
-	return s.vmStore.UpdateStatus(vmID, "stopped", vm.IP)
+
+	s.taskStore.Update(taskID, "running", 50, "等待虚拟机关机...")
+	deadline := time.Now().Add(2 * time.Minute)
+	for time.Now().Before(deadline) {
+		time.Sleep(3 * time.Second)
+		if running, _ := s.virt.IsRunning(vm.Name); !running {
+			s.vmStore.UpdateStatus(vm.ID, "stopped", vm.IP)
+			s.taskStore.Update(taskID, "success", 100, "虚拟机已关机")
+			return
+		}
+	}
+	s.taskStore.Update(taskID, "failed", 0, "关机超时")
 }
 
-func (s *VMService) Restart(vmID string) error {
+func (s *VMService) Restart(vmID string) (string, error) {
 	vm, err := s.vmStore.Get(vmID)
 	if err != nil {
-		return err
+		return "", err
 	}
+	taskID := uuid.NewString()
+	task := &store.Task{
+		ID: taskID, Type: "restart_vm", RefID: vmID,
+		Status: "running", Progress: 0, Message: "正在重启...",
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := s.taskStore.Create(task); err != nil {
+		return "", err
+	}
+	go s.runRestart(vm, taskID)
+	return taskID, nil
+}
+
+func (s *VMService) runRestart(vm *store.VM, taskID string) {
+	s.taskStore.Update(taskID, "running", 20, "正在发送重启指令...")
 	if err := s.virt.Reboot(vm.Name); err != nil {
-		return err
+		s.taskStore.Update(taskID, "failed", 0, "重启失败: "+err.Error())
+		return
 	}
-	return s.vmStore.UpdateStatus(vmID, "running", vm.IP)
+
+	// 等 VM 短暂下线后再检测恢复
+	time.Sleep(5 * time.Second)
+	s.taskStore.Update(taskID, "running", 60, "等待虚拟机恢复...")
+	deadline := time.Now().Add(2 * time.Minute)
+	for time.Now().Before(deadline) {
+		time.Sleep(3 * time.Second)
+		if running, _ := s.virt.IsRunning(vm.Name); running {
+			s.taskStore.Update(taskID, "success", 100, "虚拟机已重启")
+			return
+		}
+	}
+	s.taskStore.Update(taskID, "failed", 0, "重启超时")
 }
 
 type domainData struct {

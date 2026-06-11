@@ -20,6 +20,12 @@
     </nav>
     <main class="container">
 
+      <!-- 操作进度条（start/stop/restart） -->
+      <div v-if="actionTask" style="margin-bottom:1rem">
+        <p style="margin-bottom:0.25rem">{{ actionTask.label }}中：{{ actionTask.message }}</p>
+        <progress :value="actionTask.progress" max="100"></progress>
+      </div>
+
       <!-- 登录 -->
       <article v-if="view === 'login'" style="max-width:400px;margin:80px auto">
         <h2>登录 BroodVM</h2>
@@ -47,10 +53,10 @@
               <td>{{ vm.IP || '-' }}</td>
               <td><span class="badge" :style="badgeStyle(vm.Status)">{{ vm.Status }}</span></td>
               <td>
-                <button class="outline secondary" :disabled="vm.Status === 'running'" @click="vmAction(vm.ID, 'start')">启动</button>
-                <button class="outline secondary" :disabled="vm.Status !== 'running'" @click="vmAction(vm.ID, 'stop')">停止</button>
-                <button class="outline secondary" :disabled="vm.Status !== 'running'" @click="vmAction(vm.ID, 'restart')">重启</button>
-                <button class="contrast outline" @click="confirmDelete(vm.ID)">删除</button>
+                <button class="outline secondary" :disabled="vm.Status === 'running' || !!actionTask" @click="vmAction(vm.ID, 'start')">启动</button>
+                <button class="outline secondary" :disabled="vm.Status !== 'running' || !!actionTask" @click="vmAction(vm.ID, 'stop')">停止</button>
+                <button class="outline secondary" :disabled="vm.Status !== 'running' || !!actionTask" @click="vmAction(vm.ID, 'restart')">重启</button>
+                <button class="contrast outline" :disabled="!!actionTask" @click="confirmDelete(vm.ID)">删除</button>
               </td>
             </tr>
           </tbody>
@@ -97,10 +103,10 @@
           <tr><th>创建时间</th><td>{{ currentVM.CreatedAt }}</td></tr>
         </table>
         <div class="grid" style="margin-top:1rem">
-          <button :disabled="currentVM.Status === 'running'" @click="vmAction(currentVM.ID, 'start')">启动</button>
-          <button :disabled="currentVM.Status !== 'running'" @click="vmAction(currentVM.ID, 'stop')">停止</button>
-          <button :disabled="currentVM.Status !== 'running'" @click="vmAction(currentVM.ID, 'restart')">重启</button>
-          <button class="contrast" @click="confirmDelete(currentVM.ID)">删除</button>
+          <button :disabled="currentVM.Status === 'running' || !!actionTask" @click="vmAction(currentVM.ID, 'start')">启动</button>
+          <button :disabled="currentVM.Status !== 'running' || !!actionTask" @click="vmAction(currentVM.ID, 'stop')">停止</button>
+          <button :disabled="currentVM.Status !== 'running' || !!actionTask" @click="vmAction(currentVM.ID, 'restart')">重启</button>
+          <button class="contrast" :disabled="!!actionTask" @click="confirmDelete(currentVM.ID)">删除</button>
         </div>
         <a href="#/" style="display:inline-block;margin-top:1rem">← 返回列表</a>
       </article>

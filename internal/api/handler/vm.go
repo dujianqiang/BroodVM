@@ -62,25 +62,28 @@ func (h *VMHandler) Delete(c *gin.Context) {
 }
 
 func (h *VMHandler) Start(c *gin.Context) {
-	if err := h.svc.Start(c.Param("id")); err != nil {
+	taskID, err := h.svc.Start(c.Param("id"))
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "已启动"})
+	c.JSON(http.StatusAccepted, gin.H{"task_id": taskID})
 }
 
 func (h *VMHandler) Stop(c *gin.Context) {
-	if err := h.svc.Stop(c.Param("id")); err != nil {
+	taskID, err := h.svc.Stop(c.Param("id"))
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "已关机"})
+	c.JSON(http.StatusAccepted, gin.H{"task_id": taskID})
 }
 
 func (h *VMHandler) Restart(c *gin.Context) {
-	if err := h.svc.Restart(c.Param("id")); err != nil {
+	taskID, err := h.svc.Restart(c.Param("id"))
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "已重启"})
+	c.JSON(http.StatusAccepted, gin.H{"task_id": taskID})
 }

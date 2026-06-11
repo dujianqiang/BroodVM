@@ -17,6 +17,9 @@ createApp({
 
     const currentVM = ref(null);
 
+    // 当前正在执行的操作（start/stop/restart）
+    const actionTask = ref(null); // { label, message, progress }
+
     // ---- API ----
 
     async function request(method, path, body) {
@@ -101,11 +104,22 @@ createApp({
 
     // ---- VM 操作 ----
 
+    const actionLabels = { start: '启动', stop: '关机', restart: '重启' };
+
     async function vmAction(id, action) {
+      const label = actionLabels[action] || action;
+      actionTask.value = { label, message: '正在提交...', progress: 0 };
       try {
-        await request('POST', `/vms/${id}/${action}`);
-        await route();
+        const r = await request('POST', `/vms/${id}/${action}`);
+        pollTask(r.task_id, t => {
+          actionTask.value = { label, message: t.Message, progress: t.Progress };
+        }, async t => {
+          actionTask.value = null;
+          if (t.Status === 'failed') alert(`${label}失败：` + t.Message);
+          await route();
+        });
       } catch (e) {
+        actionTask.value = null;
         if (e.status !== 401) alert('操作失败: ' + e.message);
       }
     }
@@ -175,7 +189,7 @@ createApp({
       loginForm, loginError, loginLoading,
       vms,
       newForm, creating, createProgress,
-      currentVM,
+      currentVM, actionTask,
       badgeStyle, login, logout,
       vmAction, confirmDelete, createVM,
     };
