@@ -13,8 +13,8 @@ import (
 
 type Config struct {
 	Host struct {
-		Bridge   string `yaml:"bridge"`
-		ImageDir string `yaml:"image_dir"`
+		Bridge    string `yaml:"bridge"`
+		ImageDir  string `yaml:"image_dir"`
 		SeedImage struct {
 			Source string `yaml:"source"`
 		} `yaml:"seed_image"`
@@ -72,11 +72,27 @@ func downloadFile(dest, url string) error {
 		return err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, url)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
+		return err
+	}
+
 	f, err := os.Create(dest)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
+
 	_, err = io.Copy(f, resp.Body)
-	return err
+	if err != nil {
+		f.Close()
+		os.Remove(dest)
+		return err
+	}
+	return nil
 }
