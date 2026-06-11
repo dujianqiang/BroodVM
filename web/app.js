@@ -56,10 +56,7 @@ function renderLogin() {
     e.preventDefault();
     API.login($('#inp-user').val(), $('#inp-pass').val())
       .done(r => { setNavUser(r.username); navigate('/'); })
-      .fail(r => {
-        const msg = r.responseJSON?.error || '用户名或密码错误';
-        $('#login-err').text(msg);
-      });
+      .fail(r => $('#login-err').text(r.responseJSON?.error || '用户名或密码错误'));
   });
 }
 
@@ -90,24 +87,18 @@ function renderList() {
         <tbody>${rows}</tbody>
       </table>
     `);
-    // 每次重新渲染后重新绑定，先清除旧绑定防止累积
-    $('#app').off('click.vm')
-      .on('click.vm', '.btn-start',   e => vmAction($(e.currentTarget).data('id'), 'start'))
-      .on('click.vm', '.btn-stop',    e => vmAction($(e.currentTarget).data('id'), 'stop'))
-      .on('click.vm', '.btn-restart', e => vmAction($(e.currentTarget).data('id'), 'restart'))
-      .on('click.vm', '.btn-del',     e => { if(confirm('确认删除？')) vmDelete($(e.currentTarget).data('id')); });
   }).fail(handleAuthFail);
 }
 
 function vmAction(id, action) {
-  API[action](id).done(() => renderList()).fail(r => alert(r.responseJSON?.error || '操作失败'));
+  API[action](id).done(() => renderList()).fail(handleAuthFail);
 }
 
 function vmDelete(id) {
   API.delete(id).done(r => {
     alert('删除任务已提交，正在后台执行');
     pollTask(r.task_id, null, () => renderList());
-  }).fail(r => alert(r.responseJSON?.error || '删除失败'));
+  }).fail(handleAuthFail);
 }
 
 function renderNew() {
@@ -136,13 +127,13 @@ function renderNew() {
   `);
   $('#form-create').on('submit', e => {
     e.preventDefault();
-    const data = {
+    const req = {
       Name: $('#inp-name').val(), VCPU: +$('#inp-vcpu').val(),
       MemoryGB: +$('#inp-mem').val(), DiskGB: +$('#inp-disk').val(),
       NetworkType: $('#inp-net').val(),
     };
     $('button[type=submit]').prop('disabled', true);
-    API.create(data).done(r => {
+    API.create(req).done(r => {
       $('#progress-area').show();
       pollTask(r.task_id, t => {
         $('#prog-bar').val(t.Progress);
@@ -192,7 +183,7 @@ function renderVM(id) {
 
 function handleAuthFail(xhr) {
   if (xhr.status === 401) navigate('/login');
-  else alert('请求失败: ' + xhr.status);
+  else alert('请求失败: ' + (xhr.responseJSON?.error || xhr.status));
 }
 
 function navigate(path) { location.hash = '#' + path; }
@@ -208,13 +199,20 @@ function route() {
 }
 
 $(document).ready(() => {
+  // 列表页按钮事件：在 document 上委托，只初始化一次
+  $(document)
+    .on('click.vm', '#app .btn-start',   e => vmAction($(e.currentTarget).data('id'), 'start'))
+    .on('click.vm', '#app .btn-stop',    e => vmAction($(e.currentTarget).data('id'), 'stop'))
+    .on('click.vm', '#app .btn-restart', e => vmAction($(e.currentTarget).data('id'), 'restart'))
+    .on('click.vm', '#app .btn-del',     e => { if(confirm('确认删除？')) vmDelete($(e.currentTarget).data('id')); });
+
   $('#btn-logout').on('click', () =>
     API.logout().always(() => { setNavUser(null); navigate('/login'); })
   );
   $(window).on('hashchange', route);
 
-  // 恢复登录状态：先检查是否已登录，再路由
+  // 页面加载：先检查登录状态，再路由
   API.me()
     .done(r => { setNavUser(r.username); route(); })
-    .fail(() => { route(); });
+    .fail(() => route());
 });
