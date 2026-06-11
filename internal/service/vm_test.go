@@ -229,3 +229,43 @@ func TestCreate_BridgeIPReuseAfterDelete(t *testing.T) {
 		t.Errorf("vm-b2 ip = %q, want 192.168.1.100/24", vms2[0].IP)
 	}
 }
+
+func TestCreate_BridgeIPReuseAfterError(t *testing.T) {
+	vs, ts, mock, cfg := newTestDeps(t)
+	cfg.Host.IPPool.Gateway = "192.168.1.1"
+	cfg.Host.IPPool.IPs = []string{"192.168.1.100/24"}
+	svc := service.NewVMService(cfg, vs, ts, mock, "/tmp/seed.img")
+
+	_, err := svc.Create(service.CreateVMReq{
+		Name: "vm-b1", VCPU: 1, MemoryGB: 1, DiskGB: 10, NetworkType: "bridge",
+	})
+	if err != nil {
+		t.Fatalf("Create vm-b1: %v", err)
+	}
+
+	// 模拟创建失败：将 vm-b1 的 status 置为 error
+	vms, _ := vs.List()
+	vs.UpdateStatus(vms[0].ID, "error", "")
+
+	// error 状态 VM 的 IP 应该可以被复用
+	_, err = svc.Create(service.CreateVMReq{
+		Name: "vm-b2", VCPU: 1, MemoryGB: 1, DiskGB: 10, NetworkType: "bridge",
+	})
+	if err != nil {
+		t.Fatalf("Create vm-b2 after error: %v", err)
+	}
+	// vm-b1 status=error，List() 仍返回它（不过滤 error）
+	vms2, _ := vs.List()
+	var vm2 *store.VM
+	for _, v := range vms2 {
+		if v.Name == "vm-b2" {
+			vm2 = v
+		}
+	}
+	if vm2 == nil {
+		t.Fatal("vm-b2 not found")
+	}
+	if vm2.IP != "192.168.1.100/24" {
+		t.Errorf("vm-b2 ip = %q, want 192.168.1.100/24", vm2.IP)
+	}
+}

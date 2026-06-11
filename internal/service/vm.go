@@ -447,7 +447,7 @@ func (s *VMService) findFreePoolIP() (string, error) {
 	}
 	used := make(map[string]bool, len(vms))
 	for _, vm := range vms {
-		if vm.IP != "" {
+		if vm.IP != "" && vm.Status != "error" {
 			used[vm.IP] = true
 		}
 	}
