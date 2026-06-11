@@ -134,12 +134,16 @@ func (s *VMService) runCreate(vm *store.VM, taskID string) {
 		return
 	}
 
-	// 3. 渲染 XML + define + start
+	// 3. 渲染 XML + 保存到 xml/ 子目录 + define + start
 	progress(50, "正在定义虚拟机...")
 	xmlDesc, err := s.renderXML(vm, diskPath, cidataPath)
 	if err != nil {
 		fail("渲染 XML 失败", err)
 		return
+	}
+	xmlDir := filepath.Join(imageDir, "xml")
+	if err := os.MkdirAll(xmlDir, 0755); err == nil {
+		os.WriteFile(filepath.Join(xmlDir, vm.Name+".xml"), []byte(xmlDesc), 0644) //nolint:errcheck
 	}
 	if err := s.virt.DefineAndStart(xmlDesc); err != nil {
 		fail("启动虚拟机失败", err)
@@ -207,11 +211,12 @@ func (s *VMService) runDelete(vm *store.VM, taskID string) {
 		return
 	}
 
-	// 3. 删除磁盘文件
+	// 3. 删除磁盘文件及 XML
 	s.taskStore.Update(taskID, "running", 70, "正在删除磁盘文件...")
 	imageDir := s.cfg.Host.ImageDir
 	os.Remove(filepath.Join(imageDir, vm.Name+".qcow2"))
 	os.Remove(filepath.Join(imageDir, vm.Name+"-cidata.iso"))
+	os.Remove(filepath.Join(imageDir, "xml", vm.Name+".xml"))
 
 	s.vmStore.Delete(vm.ID)
 	s.taskStore.Update(taskID, "success", 100, "虚拟机已删除")
