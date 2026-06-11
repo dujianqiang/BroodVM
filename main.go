@@ -67,6 +67,7 @@ func main() {
 	sessions := service.NewSessionStore()
 	vmSvc := service.NewVMService(cfg, vmStore, taskStore, virtClient, seedImage)
 	vmSvc.SetTemplate(vmTmpl)
+	vmSvc.SyncRunningIPs() // 启动时补全 running VM 的 IP
 
 	// 8. 初始化 handler
 	authH := handler.NewAuthHandler(cfg, sessions)

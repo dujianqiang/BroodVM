@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -257,7 +258,8 @@ func (s *VMService) runStart(vm *store.VM, taskID string) {
 	for time.Now().Before(deadline) {
 		time.Sleep(3 * time.Second)
 		if running, _ := s.virt.IsRunning(vm.Name); running {
-			s.vmStore.UpdateStatus(vm.ID, "running", vm.IP)
+			ip, _ := s.virt.GetIP(vm.Name, vm.MAC)
+			s.vmStore.UpdateStatus(vm.ID, "running", ip)
 			s.taskStore.Update(taskID, "success", 100, "虚拟机已启动")
 			return
 		}
@@ -373,27 +375,22 @@ func generateMAC() string {
 	return fmt.Sprintf("52:54:00:%02x:%02x:%02x", b[0], b[1], b[2])
 }
 
-// ListVMs 返回所有 VM，并对 running 且 IP 为空的 VM 异步刷新 IP。
-func (s *VMService) ListVMs() ([]*store.VM, error) {
+func (s *VMService) ListVMs() ([]*store.VM, error) { return s.vmStore.List() }
+func (s *VMService) GetVM(id string) (*store.VM, error) { return s.vmStore.Get(id) }
+
+// SyncRunningIPs 在服务启动时调用，对 running 但 IP 为空的 VM 补全 IP。
+func (s *VMService) SyncRunningIPs() {
 	vms, err := s.vmStore.List()
 	if err != nil {
-		return nil, err
+		return
 	}
 	for _, vm := range vms {
 		if vm.Status == "running" && vm.IP == "" {
-			go s.refreshIP(vm)
+			if ip, _ := s.virt.GetIP(vm.Name, vm.MAC); ip != "" {
+				s.vmStore.UpdateStatus(vm.ID, vm.Status, ip)
+				log.Printf("synced IP for %s: %s", vm.Name, ip)
+			}
 		}
 	}
-	return vms, nil
 }
-
-func (s *VMService) refreshIP(vm *store.VM) {
-	ip, err := s.virt.GetIP(vm.Name, vm.MAC)
-	if err != nil || ip == "" {
-		return
-	}
-	s.vmStore.UpdateStatus(vm.ID, vm.Status, ip)
-}
-
-func (s *VMService) GetVM(id string) (*store.VM, error) { return s.vmStore.Get(id) }
 func (s *VMService) GetTask(id string) (*store.Task, error) { return s.taskStore.Get(id) }
