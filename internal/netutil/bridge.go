@@ -10,6 +10,7 @@ import (
 )
 
 // BridgeSubnet 返回指定接口的 IPv4 地址和所属子网（网络地址）。
+// 仅处理 IPv4，IPv6 地址被忽略。
 func BridgeSubnet(ifaceName string) (net.IP, *net.IPNet, error) {
 	iface, err := net.InterfaceByName(ifaceName)
 	if err != nil {
