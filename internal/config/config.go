@@ -19,6 +19,11 @@ type Config struct {
 			Source string `yaml:"source"`
 		} `yaml:"seed_image"`
 		SSHKey string `yaml:"ssh_key"`
+		IPPool struct {
+			Gateway string   `yaml:"gateway"`
+			DNS     string   `yaml:"dns"`
+			IPs     []string `yaml:"ips"`
+		} `yaml:"ip_pool"`
 	} `yaml:"host"`
 	Server struct {
 		Port int `yaml:"port"`

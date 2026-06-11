@@ -68,3 +68,40 @@ func TestEnsureSeedImage_LocalExists(t *testing.T) {
 		t.Errorf("got %q, want %q", got, seedPath)
 	}
 }
+
+func TestLoad_IPPool(t *testing.T) {
+	yaml := `
+host:
+  bridge: br0
+  ip_pool:
+    gateway: 192.168.1.1
+    dns: 8.8.8.8,8.8.4.4
+    ips:
+      - 192.168.1.100/24
+      - 192.168.1.101/24
+server:
+  port: 8080
+auth:
+  username: admin
+  password: admin
+`
+	f := filepath.Join(t.TempDir(), "config.yaml")
+	os.WriteFile(f, []byte(yaml), 0644)
+
+	cfg, err := config.Load(f)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Host.IPPool.Gateway != "192.168.1.1" {
+		t.Errorf("gateway = %q, want 192.168.1.1", cfg.Host.IPPool.Gateway)
+	}
+	if cfg.Host.IPPool.DNS != "8.8.8.8,8.8.4.4" {
+		t.Errorf("dns = %q, want 8.8.8.8,8.8.4.4", cfg.Host.IPPool.DNS)
+	}
+	if len(cfg.Host.IPPool.IPs) != 2 {
+		t.Errorf("ips len = %d, want 2", len(cfg.Host.IPPool.IPs))
+	}
+	if cfg.Host.IPPool.IPs[0] != "192.168.1.100/24" {
+		t.Errorf("ips[0] = %q, want 192.168.1.100/24", cfg.Host.IPPool.IPs[0])
+	}
+}
