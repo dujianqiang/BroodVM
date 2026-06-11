@@ -210,7 +210,63 @@ VM 标准分两层：
 
 ---
 
-## 六、配置文件（config.yaml）
+## 六、环境初始化
+
+### 6.1 `broodvm setup` — 交互式初始化向导
+
+一次性运行，按步骤依次执行，每步幂等（已完成则跳过并提示）：
+
+| 步骤 | 内容 | 失败行为 |
+|------|------|----------|
+| 1 | 检测 OS 兼容性（Ubuntu 22.04+） | 退出并报错 |
+| 2 | `apt install` 安装依赖包（libvirt-daemon-system、virtinst、qemu-utils、qemu-system-x86、cloud-image-utils、bridge-utils） | 退出并报错 |
+| 3 | 启用并启动 `libvirtd` 服务 | 退出并报错 |
+| 4 | 将当前用户加入 `libvirt` 组 | 警告，提示重新登录 |
+| 5 | 配置网络桥接 `br0`（netplan）⚠️ 需输入 `yes` 确认，可用 `--skip-bridge` 跳过 | 警告，不退出 |
+| 6 | 创建存储池目录 `/var/lib/libvirt/images` | 退出并报错 |
+| 7 | 生成 SSH 密钥（若 `ssh_key` 路径不存在） | 警告 |
+| 8 | 下载种子镜像（若 `seed_image.source` 为 URL 且本地不存在） | 警告，可后续重试 |
+
+网络桥接步骤交互示例：
+```
+[步骤 5/8] 配置网络桥接 br0
+⚠️  此操作将修改 netplan 配置，可能导致短暂断网。
+    检测到当前网卡：ens33 (192.168.1.100)
+    确认继续？(yes/no): _
+```
+
+### 6.2 启动自检（`broodvm serve` 启动时）
+
+启动时自动检测关键依赖，分两级：
+
+| 级别 | 条件 | 行为 |
+|------|------|------|
+| FATAL | libvirtd 未运行 / 无法连接 | 打印错误，进程退出 |
+| FATAL | 种子镜像不存在 | 打印错误，进程退出 |
+| WARN | br0 不存在（桥接模式下） | 打印警告，继续启动，创建 VM 时报错 |
+| WARN | SSH 密钥不存在 | 打印警告，继续启动 |
+| OK | 一切就绪 | 正常启动 |
+
+输出示例：
+```
+[FATAL] libvirtd 未运行，请执行: sudo broodvm setup
+[WARN]  bridge br0 不存在，桥接网络将不可用
+[OK]    种子镜像就绪: /var/lib/libvirt/images/jammy-server-cloudimg-amd64.img
+[OK]    SSH 密钥就绪: /root/.ssh/id_ed25519
+```
+
+### 6.3 目录结构补充
+
+```
+broodvm/
+├── cmd/
+│   ├── server.go       # broodvm serve
+│   └── setup.go        # broodvm setup
+```
+
+---
+
+## 七、配置文件（config.yaml）
 
 ```yaml
 host:
