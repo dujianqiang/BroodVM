@@ -33,7 +33,12 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 	token := h.sessions.Create(req.Username)
 	c.SetCookie("session", token, 86400, "/", "", false, true)
-	c.JSON(http.StatusOK, gin.H{"message": "登录成功"})
+	c.JSON(http.StatusOK, gin.H{"username": req.Username})
+}
+
+func (h *AuthHandler) Me(c *gin.Context) {
+	token, _ := c.Cookie("session")
+	c.JSON(http.StatusOK, gin.H{"username": h.sessions.GetUsername(token)})
 }
 
 func (h *AuthHandler) Logout(c *gin.Context) {

@@ -32,6 +32,13 @@ func (s *SessionStore) Validate(token string) bool {
 	return ok
 }
 
+func (s *SessionStore) GetUsername(token string) string {
+	s.mu.RLock()
+	u := s.sessions[token]
+	s.mu.RUnlock()
+	return u
+}
+
 func (s *SessionStore) Delete(token string) {
 	s.mu.Lock()
 	delete(s.sessions, token)

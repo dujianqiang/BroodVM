@@ -22,6 +22,7 @@ func NewRouter(
 	api.POST("/logout", authH.Logout)
 
 	protected := api.Group("", middleware.Auth(sessions))
+	protected.GET("/me", authH.Me)
 	protected.GET("/vms", vmH.List)
 	protected.POST("/vms", vmH.Create)
 	protected.GET("/vms/:id", vmH.Get)

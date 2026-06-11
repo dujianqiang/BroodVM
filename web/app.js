@@ -1,6 +1,7 @@
 const API = {
-  login:   (u, p)  => $.post('/api/login',   JSON.stringify({username:u,password:p}), null, 'json'),
+  login:   (u, p)  => $.ajax({url:'/api/login', method:'POST', contentType:'application/json', data:JSON.stringify({username:u,password:p})}),
   logout:  ()      => $.post('/api/logout'),
+  me:      ()      => $.get('/api/me'),
   vms:     ()      => $.get('/api/vms'),
   vm:      (id)    => $.get(`/api/vms/${id}`),
   create:  (data)  => $.ajax({url:'/api/vms', method:'POST', contentType:'application/json', data:JSON.stringify(data)}),
@@ -16,6 +17,16 @@ const badge = s => {
   return `<span class="badge" style="background:${color}">${s}</span>`;
 };
 
+function setNavUser(username) {
+  if (username) {
+    $('#nav-user').text(username).show();
+    $('#nav-actions').show();
+  } else {
+    $('#nav-user').hide();
+    $('#nav-actions').hide();
+  }
+}
+
 function pollTask(taskId, onProgress, done) {
   const interval = setInterval(() => {
     API.task(taskId).done(t => {
@@ -29,6 +40,7 @@ function pollTask(taskId, onProgress, done) {
 }
 
 function renderLogin() {
+  setNavUser(null);
   $('#app').html(`
     <article style="max-width:400px;margin:80px auto">
       <h2>登录 BroodVM</h2>
@@ -43,8 +55,11 @@ function renderLogin() {
   $('#form-login').on('submit', e => {
     e.preventDefault();
     API.login($('#inp-user').val(), $('#inp-pass').val())
-      .done(() => navigate('/'))
-      .fail(() => $('#login-err').text('用户名或密码错误'));
+      .done(r => { setNavUser(r.username); navigate('/'); })
+      .fail(r => {
+        const msg = r.responseJSON?.error || '用户名或密码错误';
+        $('#login-err').text(msg);
+      });
   });
 }
 
@@ -75,13 +90,13 @@ function renderList() {
         <tbody>${rows}</tbody>
       </table>
     `);
+    // 每次重新渲染后重新绑定，先清除旧绑定防止累积
+    $('#app').off('click.vm')
+      .on('click.vm', '.btn-start',   e => vmAction($(e.currentTarget).data('id'), 'start'))
+      .on('click.vm', '.btn-stop',    e => vmAction($(e.currentTarget).data('id'), 'stop'))
+      .on('click.vm', '.btn-restart', e => vmAction($(e.currentTarget).data('id'), 'restart'))
+      .on('click.vm', '.btn-del',     e => { if(confirm('确认删除？')) vmDelete($(e.currentTarget).data('id')); });
   }).fail(handleAuthFail);
-
-  $('#app')
-    .on('click', '.btn-start',   e => vmAction($(e.currentTarget).data('id'), 'start'))
-    .on('click', '.btn-stop',    e => vmAction($(e.currentTarget).data('id'), 'stop'))
-    .on('click', '.btn-restart', e => vmAction($(e.currentTarget).data('id'), 'restart'))
-    .on('click', '.btn-del',     e => { if(confirm('确认删除？')) vmDelete($(e.currentTarget).data('id')); });
 }
 
 function vmAction(id, action) {
@@ -193,7 +208,13 @@ function route() {
 }
 
 $(document).ready(() => {
-  $('#btn-logout').on('click', () => API.logout().always(() => navigate('/login')));
+  $('#btn-logout').on('click', () =>
+    API.logout().always(() => { setNavUser(null); navigate('/login'); })
+  );
   $(window).on('hashchange', route);
-  route();
+
+  // 恢复登录状态：先检查是否已登录，再路由
+  API.me()
+    .done(r => { setNavUser(r.username); route(); })
+    .fail(() => { route(); });
 });
