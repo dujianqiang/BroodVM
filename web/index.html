@@ -50,7 +50,7 @@
               <td>{{ vm.VCPU }}</td>
               <td>{{ vm.MemoryGB }} GiB</td>
               <td>{{ vm.DiskGB }} GiB</td>
-              <td>{{ vm.IP || '-' }}</td>
+              <td>{{ vm.IP ? vm.IP.split('/')[0] : '-' }}</td>
               <td><span class="badge" :style="badgeStyle(vm.Status)">{{ vm.Status }}</span></td>
               <td>
                 <button class="outline secondary" :disabled="vm.Status === 'running' || !!actionTask" @click="vmAction(vm.ID, 'start')">启动</button>
@@ -109,7 +109,7 @@
           <tr><th>内存</th><td>{{ currentVM.MemoryGB }} GiB</td></tr>
           <tr><th>磁盘</th><td>{{ currentVM.DiskGB }} GiB</td></tr>
           <tr><th>网络</th><td>{{ currentVM.NetworkType }}</td></tr>
-          <tr><th>IP</th><td>{{ currentVM.IP || '—' }}</td></tr>
+          <tr><th>IP</th><td>{{ currentVM.IP ? currentVM.IP.split('/')[0] : '—' }}</td></tr>
           <tr><th>VNC 端口</th><td>{{ currentVM.VNCPort }}</td></tr>
           <tr><th>创建时间</th><td>{{ currentVM.CreatedAt }}</td></tr>
         </table>
