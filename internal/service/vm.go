@@ -373,6 +373,27 @@ func generateMAC() string {
 	return fmt.Sprintf("52:54:00:%02x:%02x:%02x", b[0], b[1], b[2])
 }
 
-func (s *VMService) ListVMs() ([]*store.VM, error) { return s.vmStore.List() }
+// ListVMs 返回所有 VM，并对 running 且 IP 为空的 VM 异步刷新 IP。
+func (s *VMService) ListVMs() ([]*store.VM, error) {
+	vms, err := s.vmStore.List()
+	if err != nil {
+		return nil, err
+	}
+	for _, vm := range vms {
+		if vm.Status == "running" && vm.IP == "" {
+			go s.refreshIP(vm)
+		}
+	}
+	return vms, nil
+}
+
+func (s *VMService) refreshIP(vm *store.VM) {
+	ip, err := s.virt.GetIP(vm.Name, vm.MAC)
+	if err != nil || ip == "" {
+		return
+	}
+	s.vmStore.UpdateStatus(vm.ID, vm.Status, ip)
+}
+
 func (s *VMService) GetVM(id string) (*store.VM, error) { return s.vmStore.Get(id) }
 func (s *VMService) GetTask(id string) (*store.Task, error) { return s.taskStore.Get(id) }
