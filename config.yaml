@@ -1,0 +1,13 @@
+host:
+  bridge: br0
+  image_dir: /var/lib/libvirt/images
+  seed_image:
+    source: "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
+  ssh_key: /root/.ssh/id_ed25519
+
+server:
+  port: 8080
+
+auth:
+  username: admin
+  password: admin
