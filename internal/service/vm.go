@@ -479,7 +479,11 @@ func (s *VMService) findFreePoolIP() (ip, gateway, dns string, err error) {
 
 	var gwIP net.IP
 	if s.cfg.Host.IPPool.Gateway != "" {
-		gwIP = net.ParseIP(s.cfg.Host.IPPool.Gateway).To4()
+		parsed := net.ParseIP(s.cfg.Host.IPPool.Gateway)
+		if parsed == nil {
+			return "", "", "", fmt.Errorf("ip_pool.gateway 配置无效: %q", s.cfg.Host.IPPool.Gateway)
+		}
+		gwIP = parsed.To4()
 		gateway = s.cfg.Host.IPPool.Gateway
 	} else {
 		gwIP, err = netutil.BridgeGateway(bridgeName)
@@ -489,6 +493,7 @@ func (s *VMService) findFreePoolIP() (ip, gateway, dns string, err error) {
 		gateway = gwIP.String()
 	}
 
+	// 枚举子网所有主机地址，预期用于 /24 及以上的小子网；更大子网性能可能下降。
 	ones, bits := subnet.Mask.Size()
 	total := 1 << uint(bits-ones)
 	base := binary.BigEndian.Uint32(subnet.IP.To4())
