@@ -93,7 +93,7 @@ func (c *LibvirtClient) GetIP(name string) (string, error) {
 		return "", err
 	}
 	defer dom.Free()
-	ifaces, err := dom.InterfaceAddresses(golibvirt.DOMAIN_INTERFACE_ADDRESSES_SRC_LEASE, 0)
+	ifaces, err := dom.ListAllInterfaceAddresses(golibvirt.DOMAIN_INTERFACE_ADDRESSES_SRC_LEASE)
 	if err != nil {
 		return "", nil // dnsmasq lease 可能还未就绪，不算错误
 	}
