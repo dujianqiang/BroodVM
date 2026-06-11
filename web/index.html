@@ -8,17 +8,110 @@
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <nav class="container-fluid">
-    <ul><li><strong>BroodVM</strong></li></ul>
-    <ul id="nav-actions" style="display:none">
-      <li><a href="#/" id="nav-home">VM 列表</a></li>
-      <li><a href="#/vms/new">+ 新建</a></li>
-      <li><span id="nav-user" style="display:none;opacity:0.7"></span></li>
-      <li><button id="btn-logout" class="secondary outline">登出</button></li>
-    </ul>
-  </nav>
-  <main class="container" id="app"></main>
-  <script src="/vendor/jquery.min.js"></script>
+  <div id="app">
+    <nav class="container-fluid">
+      <ul><li><strong><a href="#/" style="text-decoration:none;color:inherit">BroodVM</a></strong></li></ul>
+      <ul v-if="user">
+        <li><a href="#/">VM 列表</a></li>
+        <li><a href="#/vms/new">+ 新建</a></li>
+        <li><span style="opacity:0.7">{{ user }}</span></li>
+        <li><button class="secondary outline" @click="logout">登出</button></li>
+      </ul>
+    </nav>
+    <main class="container">
+
+      <!-- 登录 -->
+      <article v-if="view === 'login'" style="max-width:400px;margin:80px auto">
+        <h2>登录 BroodVM</h2>
+        <form @submit.prevent="login">
+          <label>用户名<input v-model="loginForm.username" type="text" required autocomplete="username"></label>
+          <label>密码<input v-model="loginForm.password" type="password" required autocomplete="current-password"></label>
+          <button type="submit" :aria-busy="loginLoading">登录</button>
+          <p v-if="loginError" style="color:red;margin-top:0.5rem">{{ loginError }}</p>
+        </form>
+      </article>
+
+      <!-- VM 列表 -->
+      <div v-else-if="view === 'list'">
+        <p v-if="!vms.length">暂无虚拟机 <a href="#/vms/new">立即创建</a></p>
+        <table v-else>
+          <thead>
+            <tr><th>名称</th><th>vCPU</th><th>内存</th><th>磁盘</th><th>IP</th><th>状态</th><th>操作</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="vm in vms" :key="vm.ID">
+              <td><a :href="'#/vms/' + vm.ID">{{ vm.Name }}</a></td>
+              <td>{{ vm.VCPU }}</td>
+              <td>{{ vm.MemoryGB }} GiB</td>
+              <td>{{ vm.DiskGB }} GiB</td>
+              <td>{{ vm.IP || '-' }}</td>
+              <td><span class="badge" :style="badgeStyle(vm.Status)">{{ vm.Status }}</span></td>
+              <td>
+                <button class="outline secondary" :disabled="vm.Status === 'running'" @click="vmAction(vm.ID, 'start')">启动</button>
+                <button class="outline secondary" :disabled="vm.Status !== 'running'" @click="vmAction(vm.ID, 'stop')">停止</button>
+                <button class="outline secondary" :disabled="vm.Status !== 'running'" @click="vmAction(vm.ID, 'restart')">重启</button>
+                <button class="contrast outline" @click="confirmDelete(vm.ID)">删除</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- 新建 VM -->
+      <article v-else-if="view === 'new'" style="max-width:500px">
+        <h2>新建虚拟机</h2>
+        <form @submit.prevent="createVM">
+          <label>名称<input v-model="newForm.Name" type="text" placeholder="vm-001" required></label>
+          <label>vCPU<input v-model.number="newForm.VCPU" type="number" min="1" required></label>
+          <label>内存 (GiB)<input v-model.number="newForm.MemoryGB" type="number" min="1" required></label>
+          <label>磁盘 (GiB)<input v-model.number="newForm.DiskGB" type="number" min="10" required></label>
+          <label>网络类型
+            <select v-model="newForm.NetworkType">
+              <option value="nat">NAT</option>
+              <option value="bridge">Bridge</option>
+            </select>
+          </label>
+          <div class="grid">
+            <button type="submit" :disabled="creating" :aria-busy="creating">创建</button>
+            <a href="#/" role="button" class="secondary outline">取消</a>
+          </div>
+        </form>
+        <div v-if="createProgress.visible" style="margin-top:1rem">
+          <progress :value="createProgress.value" max="100"></progress>
+          <p>{{ createProgress.message }}</p>
+        </div>
+      </article>
+
+      <!-- VM 详情 -->
+      <article v-else-if="view === 'vm-detail' && currentVM">
+        <h2>{{ currentVM.Name }}</h2>
+        <table>
+          <tr><th>ID</th><td>{{ currentVM.ID }}</td></tr>
+          <tr><th>状态</th><td><span class="badge" :style="badgeStyle(currentVM.Status)">{{ currentVM.Status }}</span></td></tr>
+          <tr><th>vCPU</th><td>{{ currentVM.VCPU }}</td></tr>
+          <tr><th>内存</th><td>{{ currentVM.MemoryGB }} GiB</td></tr>
+          <tr><th>磁盘</th><td>{{ currentVM.DiskGB }} GiB</td></tr>
+          <tr><th>网络</th><td>{{ currentVM.NetworkType }}</td></tr>
+          <tr><th>IP</th><td>{{ currentVM.IP || '—' }}</td></tr>
+          <tr><th>VNC 端口</th><td>{{ currentVM.VNCPort }}</td></tr>
+          <tr><th>创建时间</th><td>{{ currentVM.CreatedAt }}</td></tr>
+        </table>
+        <div class="grid" style="margin-top:1rem">
+          <button :disabled="currentVM.Status === 'running'" @click="vmAction(currentVM.ID, 'start')">启动</button>
+          <button :disabled="currentVM.Status !== 'running'" @click="vmAction(currentVM.ID, 'stop')">停止</button>
+          <button :disabled="currentVM.Status !== 'running'" @click="vmAction(currentVM.ID, 'restart')">重启</button>
+          <button class="contrast" @click="confirmDelete(currentVM.ID)">删除</button>
+        </div>
+        <a href="#/" style="display:inline-block;margin-top:1rem">← 返回列表</a>
+      </article>
+
+      <!-- 加载中 -->
+      <p v-else-if="view === 'loading'" aria-busy="true">加载中...</p>
+
+    </main>
+  </div>
+
+  <script src="/vendor/vue.global.prod.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

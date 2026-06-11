@@ -1,218 +1,183 @@
-const API = {
-  login:   (u, p)  => $.ajax({url:'/api/login', method:'POST', contentType:'application/json', data:JSON.stringify({username:u,password:p})}),
-  logout:  ()      => $.post('/api/logout'),
-  me:      ()      => $.get('/api/me'),
-  vms:     ()      => $.get('/api/vms'),
-  vm:      (id)    => $.get(`/api/vms/${id}`),
-  create:  (data)  => $.ajax({url:'/api/vms', method:'POST', contentType:'application/json', data:JSON.stringify(data)}),
-  delete:  (id)    => $.ajax({url:`/api/vms/${id}`, method:'DELETE'}),
-  start:   (id)    => $.post(`/api/vms/${id}/start`),
-  stop:    (id)    => $.post(`/api/vms/${id}/stop`),
-  restart: (id)    => $.post(`/api/vms/${id}/restart`),
-  task:    (tid)   => $.get(`/api/tasks/${tid}`),
-};
+const { createApp, ref, onMounted } = Vue;
 
-const badge = s => {
-  const color = {running:'green',stopped:'gray',creating:'blue',error:'red'}[s] || 'gray';
-  return `<span class="badge" style="background:${color}">${s}</span>`;
-};
+createApp({
+  setup() {
+    const view = ref('loading');
+    const user = ref(null);
 
-function setNavUser(username) {
-  if (username) {
-    $('#nav-user').text(username).show();
-    $('#nav-actions').show();
-  } else {
-    $('#nav-user').hide();
-    $('#nav-actions').hide();
-  }
-}
+    const loginForm = ref({ username: '', password: '' });
+    const loginError = ref('');
+    const loginLoading = ref(false);
 
-function pollTask(taskId, onProgress, done) {
-  const interval = setInterval(() => {
-    API.task(taskId).done(t => {
-      onProgress && onProgress(t);
-      if (t.Status === 'success' || t.Status === 'failed') {
-        clearInterval(interval);
-        done(t);
+    const vms = ref([]);
+
+    const newForm = ref({ Name: '', VCPU: 2, MemoryGB: 4, DiskGB: 20, NetworkType: 'nat' });
+    const creating = ref(false);
+    const createProgress = ref({ visible: false, value: 0, message: '' });
+
+    const currentVM = ref(null);
+
+    // ---- API ----
+
+    async function request(method, path, body) {
+      const opts = { method, credentials: 'same-origin', headers: {} };
+      if (body !== undefined) {
+        opts.headers['Content-Type'] = 'application/json';
+        opts.body = JSON.stringify(body);
       }
-    }).fail(() => { clearInterval(interval); done({Status:'failed',Message:'网络错误'}); });
-  }, 2000);
-}
-
-function renderLogin() {
-  setNavUser(null);
-  $('#app').html(`
-    <article style="max-width:400px;margin:80px auto">
-      <h2>登录 BroodVM</h2>
-      <form id="form-login">
-        <label>用户名<input id="inp-user" type="text" required></label>
-        <label>密码<input id="inp-pass" type="password" required></label>
-        <button type="submit">登录</button>
-        <p id="login-err" style="color:red"></p>
-      </form>
-    </article>
-  `);
-  $('#form-login').on('submit', e => {
-    e.preventDefault();
-    API.login($('#inp-user').val(), $('#inp-pass').val())
-      .done(r => { setNavUser(r.username); navigate('/'); })
-      .fail(r => $('#login-err').text(r.responseJSON?.error || '用户名或密码错误'));
-  });
-}
-
-function renderList() {
-  API.vms().done(vms => {
-    if (!vms || !vms.length) {
-      $('#app').html('<p>暂无虚拟机 <a href="#/vms/new">立即创建</a></p>');
-      return;
+      const res = await fetch('/api' + path, opts);
+      if (res.status === 401) {
+        navigate('/login');
+        throw Object.assign(new Error('未登录'), { status: 401 });
+      }
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || res.statusText);
+      }
+      if (res.status === 204) return null;
+      return res.json();
     }
-    const rows = vms.map(v => `
-      <tr>
-        <td>${v.Name}</td>
-        <td>${v.VCPU}</td>
-        <td>${v.MemoryGB} GiB</td>
-        <td>${v.DiskGB} GiB</td>
-        <td>${v.IP || '-'}</td>
-        <td>${badge(v.Status)}</td>
-        <td>
-          <button class="btn-start outline secondary" data-id="${v.ID}" ${v.Status==='running'?'disabled':''}>启动</button>
-          <button class="btn-stop outline secondary"  data-id="${v.ID}" ${v.Status!=='running'?'disabled':''}>停止</button>
-          <button class="btn-restart outline secondary" data-id="${v.ID}" ${v.Status!=='running'?'disabled':''}>重启</button>
-          <button class="btn-del contrast outline" data-id="${v.ID}">删除</button>
-        </td>
-      </tr>`).join('');
-    $('#app').html(`
-      <table>
-        <thead><tr><th>名称</th><th>vCPU</th><th>内存</th><th>磁盘</th><th>IP</th><th>状态</th><th>操作</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-    `);
-  }).fail(handleAuthFail);
-}
 
-function vmAction(id, action) {
-  API[action](id).done(() => renderList()).fail(handleAuthFail);
-}
+    // ---- 路由 ----
 
-function vmDelete(id) {
-  API.delete(id).done(r => {
-    alert('删除任务已提交，正在后台执行');
-    pollTask(r.task_id, null, () => renderList());
-  }).fail(handleAuthFail);
-}
+    function navigate(path) {
+      location.hash = '#' + path;
+    }
 
-function renderNew() {
-  $('#app').html(`
-    <article style="max-width:500px">
-      <h2>新建虚拟机</h2>
-      <form id="form-create">
-        <label>名称<input id="inp-name" type="text" placeholder="vm-001" required></label>
-        <label>vCPU<input id="inp-vcpu" type="number" value="2" min="1" required></label>
-        <label>内存 (GiB)<input id="inp-mem" type="number" value="4" min="1" required></label>
-        <label>磁盘 (GiB)<input id="inp-disk" type="number" value="20" min="10" required></label>
-        <label>网络类型
-          <select id="inp-net">
-            <option value="nat">NAT</option>
-            <option value="bridge">Bridge</option>
-          </select>
-        </label>
-        <button type="submit">创建</button>
-        <a href="#/" role="button" class="secondary outline">取消</a>
-      </form>
-      <div id="progress-area" style="display:none">
-        <progress id="prog-bar" value="0" max="100"></progress>
-        <p id="prog-msg"></p>
-      </div>
-    </article>
-  `);
-  $('#form-create').on('submit', e => {
-    e.preventDefault();
-    const req = {
-      Name: $('#inp-name').val(), VCPU: +$('#inp-vcpu').val(),
-      MemoryGB: +$('#inp-mem').val(), DiskGB: +$('#inp-disk').val(),
-      NetworkType: $('#inp-net').val(),
-    };
-    $('button[type=submit]').prop('disabled', true);
-    API.create(req).done(r => {
-      $('#progress-area').show();
-      pollTask(r.task_id, t => {
-        $('#prog-bar').val(t.Progress);
-        $('#prog-msg').text(t.Message);
-      }, t => {
-        if (t.Status === 'success') navigate('/');
-        else { alert('创建失败：' + t.Message); $('button[type=submit]').prop('disabled', false); }
-      });
-    }).fail(r => {
-      alert(r.responseJSON?.error || '请求失败');
-      $('button[type=submit]').prop('disabled', false);
+    async function route() {
+      const hash = location.hash.replace(/^#/, '') || '/';
+      if (hash === '/login') { view.value = 'login'; return; }
+      if (!user.value) { navigate('/login'); return; }
+      if (hash === '/') {
+        try { vms.value = await request('GET', '/vms'); } catch { return; }
+        view.value = 'list';
+        return;
+      }
+      if (hash === '/vms/new') {
+        newForm.value = { Name: '', VCPU: 2, MemoryGB: 4, DiskGB: 20, NetworkType: 'nat' };
+        creating.value = false;
+        createProgress.value = { visible: false, value: 0, message: '' };
+        view.value = 'new';
+        return;
+      }
+      const m = hash.match(/^\/vms\/([^/]+)$/);
+      if (m) {
+        try { currentVM.value = await request('GET', '/vms/' + m[1]); } catch { return; }
+        view.value = 'vm-detail';
+        return;
+      }
+      navigate('/');
+    }
+
+    // ---- 样式 ----
+
+    function badgeStyle(s) {
+      const c = { running: 'green', stopped: 'gray', creating: '#0073e6', error: 'red' };
+      return 'background:' + (c[s] || 'gray');
+    }
+
+    // ---- 认证 ----
+
+    async function login() {
+      loginLoading.value = true;
+      loginError.value = '';
+      try {
+        const r = await request('POST', '/login', loginForm.value);
+        user.value = r.username;
+        navigate('/');
+      } catch (e) {
+        if (e.status !== 401) loginError.value = e.message || '用户名或密码错误';
+        else loginError.value = '用户名或密码错误';
+      } finally {
+        loginLoading.value = false;
+      }
+    }
+
+    async function logout() {
+      await request('POST', '/logout').catch(() => {});
+      user.value = null;
+      navigate('/login');
+    }
+
+    // ---- VM 操作 ----
+
+    async function vmAction(id, action) {
+      try {
+        await request('POST', `/vms/${id}/${action}`);
+        await route();
+      } catch (e) {
+        if (e.status !== 401) alert('操作失败: ' + e.message);
+      }
+    }
+
+    async function confirmDelete(id) {
+      if (!confirm('确认删除？')) return;
+      try {
+        const r = await request('DELETE', '/vms/' + id);
+        alert('删除任务已提交，正在后台执行');
+        pollTask(r.task_id, null, () => route());
+      } catch (e) {
+        if (e.status !== 401) alert('删除失败: ' + e.message);
+      }
+    }
+
+    async function createVM() {
+      creating.value = true;
+      createProgress.value = { visible: false, value: 0, message: '' };
+      try {
+        const r = await request('POST', '/vms', newForm.value);
+        createProgress.value = { visible: true, value: 0, message: '任务已提交...' };
+        pollTask(r.task_id, t => {
+          createProgress.value = { visible: true, value: t.Progress, message: t.Message };
+        }, t => {
+          if (t.Status === 'success') {
+            navigate('/');
+          } else {
+            alert('创建失败：' + t.Message);
+            creating.value = false;
+          }
+        });
+      } catch (e) {
+        if (e.status !== 401) alert('请求失败: ' + e.message);
+        creating.value = false;
+      }
+    }
+
+    function pollTask(taskId, onProgress, done) {
+      const iv = setInterval(async () => {
+        try {
+          const t = await request('GET', '/tasks/' + taskId);
+          onProgress && onProgress(t);
+          if (t.Status === 'success' || t.Status === 'failed') {
+            clearInterval(iv);
+            done(t);
+          }
+        } catch {
+          clearInterval(iv);
+          done({ Status: 'failed', Message: '网络错误' });
+        }
+      }, 2000);
+    }
+
+    // ---- 初始化 ----
+
+    onMounted(async () => {
+      window.addEventListener('hashchange', () => route());
+      try {
+        const r = await request('GET', '/me');
+        if (r.username) user.value = r.username;
+      } catch {}
+      await route();
     });
-  });
-}
 
-function renderVM(id) {
-  API.vm(id).done(vm => {
-    $('#app').html(`
-      <article>
-        <h2>${vm.Name}</h2>
-        <table>
-          <tr><th>ID</th><td>${vm.ID}</td></tr>
-          <tr><th>状态</th><td>${badge(vm.Status)}</td></tr>
-          <tr><th>vCPU</th><td>${vm.VCPU}</td></tr>
-          <tr><th>内存</th><td>${vm.MemoryGB} GiB</td></tr>
-          <tr><th>磁盘</th><td>${vm.DiskGB} GiB</td></tr>
-          <tr><th>网络</th><td>${vm.NetworkType}</td></tr>
-          <tr><th>IP</th><td>${vm.IP || '—'}</td></tr>
-          <tr><th>VNC 端口</th><td>${vm.VNCPort}</td></tr>
-          <tr><th>创建时间</th><td>${vm.CreatedAt}</td></tr>
-        </table>
-        <div class="grid">
-          <button id="btn-start"   ${vm.Status==='running'?'disabled':''}>启动</button>
-          <button id="btn-stop"    ${vm.Status!=='running'?'disabled':''}>停止</button>
-          <button id="btn-restart" ${vm.Status!=='running'?'disabled':''}>重启</button>
-          <button id="btn-del" class="contrast">删除</button>
-        </div>
-        <a href="#/">← 返回列表</a>
-      </article>
-    `);
-    $('#btn-start').click(()   => vmAction(id, 'start'));
-    $('#btn-stop').click(()    => vmAction(id, 'stop'));
-    $('#btn-restart').click(() => vmAction(id, 'restart'));
-    $('#btn-del').click(() => { if(confirm('确认删除？')) vmDelete(id); });
-  }).fail(handleAuthFail);
-}
-
-function handleAuthFail(xhr) {
-  if (xhr.status === 401) navigate('/login');
-  else alert('请求失败: ' + (xhr.responseJSON?.error || xhr.status));
-}
-
-function navigate(path) { location.hash = '#' + path; }
-
-function route() {
-  const hash = location.hash.replace(/^#/, '') || '/';
-  if (hash === '/login')     return renderLogin();
-  if (hash === '/')          return renderList();
-  if (hash === '/vms/new')   return renderNew();
-  const m = hash.match(/^\/vms\/([^/]+)$/);
-  if (m) return renderVM(m[1]);
-  navigate('/');
-}
-
-$(document).ready(() => {
-  // 列表页按钮事件：在 document 上委托，只初始化一次
-  $(document)
-    .on('click.vm', '#app .btn-start',   e => vmAction($(e.currentTarget).data('id'), 'start'))
-    .on('click.vm', '#app .btn-stop',    e => vmAction($(e.currentTarget).data('id'), 'stop'))
-    .on('click.vm', '#app .btn-restart', e => vmAction($(e.currentTarget).data('id'), 'restart'))
-    .on('click.vm', '#app .btn-del',     e => { if(confirm('确认删除？')) vmDelete($(e.currentTarget).data('id')); });
-
-  $('#btn-logout').on('click', () =>
-    API.logout().always(() => { setNavUser(null); navigate('/login'); })
-  );
-  $(window).on('hashchange', route);
-
-  // 页面加载：先检查登录状态，再路由
-  API.me()
-    .done(r => { setNavUser(r.username); route(); })
-    .fail(() => route());
-});
+    return {
+      view, user,
+      loginForm, loginError, loginLoading,
+      vms,
+      newForm, creating, createProgress,
+      currentVM,
+      badgeStyle, login, logout,
+      vmAction, confirmDelete, createVM,
+    };
+  },
+}).mount('#app');
