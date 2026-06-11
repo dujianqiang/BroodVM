@@ -1,0 +1,13 @@
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 0.8em;
+}
+
+nav { border-bottom: 1px solid var(--pico-muted-border-color); margin-bottom: 1rem; }
+
+table { width: 100%; }
+th { white-space: nowrap; }
+td button { margin: 0 2px; padding: 2px 8px; font-size: 0.85em; }

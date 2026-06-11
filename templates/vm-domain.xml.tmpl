@@ -1,0 +1,58 @@
+<domain type='kvm'>
+  <name>{{.Name}}</name>
+  <uuid>{{.UUID}}</uuid>
+  <memory unit='GiB'>{{.MemoryGB}}</memory>
+  <currentMemory unit='GiB'>{{.MemoryGB}}</currentMemory>
+  <vcpu placement='static'>{{.VCPU}}</vcpu>
+  <os>
+    <type arch='x86_64' machine='q35'>hvm</type>
+    <boot dev='hd'/>
+  </os>
+  <features>
+    <acpi/>
+    <apic/>
+  </features>
+  <cpu mode='host-passthrough' check='none'/>
+  <clock offset='utc'>
+    <timer name='rtc' tickpolicy='catchup'/>
+    <timer name='pit' tickpolicy='delay'/>
+    <timer name='hpet' present='no'/>
+  </clock>
+  <devices>
+    <emulator>/usr/bin/qemu-system-x86_64</emulator>
+    <disk type='file' device='disk'>
+      <driver name='qemu' type='qcow2' discard='unmap'/>
+      <source file='{{.DiskPath}}'/>
+      <target dev='vda' bus='virtio'/>
+    </disk>
+    <disk type='file' device='cdrom'>
+      <driver name='qemu' type='raw'/>
+      <source file='{{.CidataPath}}'/>
+      <target dev='sda' bus='sata'/>
+      <readonly/>
+    </disk>
+    {{- if eq .NetworkType "bridge"}}
+    <interface type='bridge'>
+      <mac address='{{.MAC}}'/>
+      <source bridge='{{.Bridge}}'/>
+      <model type='virtio'/>
+    </interface>
+    {{- else}}
+    <interface type='network'>
+      <mac address='{{.MAC}}'/>
+      <source network='default'/>
+      <model type='virtio'/>
+    </interface>
+    {{- end}}
+    <serial type='pty'>
+      <target type='isa-serial' port='0'/>
+    </serial>
+    <console type='pty'>
+      <target type='serial' port='0'/>
+    </console>
+    <graphics type='vnc' port='{{.VNCPort}}' listen='0.0.0.0' keymap='en-us'/>
+    <video>
+      <model type='vga' vram='16384'/>
+    </video>
+  </devices>
+</domain>
