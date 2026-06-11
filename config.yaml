@@ -5,12 +5,12 @@ host:
     source: "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
   ssh_key: /root/.ssh/id_ed25519
   ip_pool:
-    gateway: 192.168.1.1
+    gateway: 192.168.56.2
     dns: 8.8.8.8,8.8.4.4
     ips:
-      - 192.168.1.100/24
-      - 192.168.1.101/24
-      - 192.168.1.102/24
+      - 192.168.56.100/24
+      - 192.168.56.101/24
+      - 192.168.56.102/24
 
 server:
   port: 8080
