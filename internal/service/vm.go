@@ -54,6 +54,10 @@ type CreateVMReq struct {
 	MemoryGB    int    `json:"MemoryGB"`
 	DiskGB      int    `json:"DiskGB"`
 	NetworkType string `json:"NetworkType"`
+	// 静态 IP 配置（可选，留空则 DHCP）
+	IP      string `json:"IP"`      // CIDR，如 192.168.1.100/24
+	Gateway string `json:"Gateway"` // 如 192.168.1.1
+	DNS     string `json:"DNS"`     // 逗号分隔，留空默认 8.8.8.8
 }
 
 // Create 创建 VM 记录和 task 记录，启动异步 goroutine，返回 task_id。
@@ -76,6 +80,9 @@ func (s *VMService) Create(req CreateVMReq) (string, error) {
 		NetworkType: req.NetworkType,
 		MAC:         generateMAC(),
 		VNCPort:     vncPort,
+		IP:          req.IP,
+		Gateway:     req.Gateway,
+		DNS:         req.DNS,
 		Status:      "creating",
 		CreatedAt:   now,
 	}
@@ -129,7 +136,16 @@ func (s *VMService) runCreate(vm *store.VM, taskID string) {
 		fail("读取 SSH 公钥失败", err)
 		return
 	}
-	cidataPath, err := cloudinit.Generate(imageDir, vm.Name, string(sshPubKey))
+	var netCfg *cloudinit.NetworkConfig
+	if vm.IP != "" {
+		netCfg = &cloudinit.NetworkConfig{
+			IP:      vm.IP,
+			Gateway: vm.Gateway,
+			DNS:     vm.DNS,
+			MAC:     vm.MAC,
+		}
+	}
+	cidataPath, err := cloudinit.Generate(imageDir, vm.Name, string(sshPubKey), netCfg)
 	if err != nil {
 		fail("生成 cidata 失败", err)
 		return
@@ -154,19 +170,29 @@ func (s *VMService) runCreate(vm *store.VM, taskID string) {
 	// 4. 轮询等待 VM 就绪（最长 3 分钟）
 	progress(70, "正在等待虚拟机启动...")
 	deadline := time.Now().Add(3 * time.Minute)
-	var vmIP string
-	for time.Now().Before(deadline) {
-		time.Sleep(5 * time.Second)
-		running, _ := s.virt.IsRunning(vm.Name)
-		if running {
-			vmIP, _ = s.virt.GetIP(vm.Name, vm.MAC)
-			if vmIP != "" {
+	finalIP := vm.IP // 静态 IP 已知，直接用；DHCP 则等待发现
+	if vm.IP == "" {
+		// DHCP 模式：轮询直到拿到 IP
+		for time.Now().Before(deadline) {
+			time.Sleep(5 * time.Second)
+			if running, _ := s.virt.IsRunning(vm.Name); running {
+				if ip, _ := s.virt.GetIP(vm.Name, vm.MAC); ip != "" {
+					finalIP = ip
+					break
+				}
+			}
+		}
+	} else {
+		// 静态 IP 模式：只等待 VM 进入 running 状态
+		for time.Now().Before(deadline) {
+			time.Sleep(5 * time.Second)
+			if running, _ := s.virt.IsRunning(vm.Name); running {
 				break
 			}
 		}
 	}
 
-	s.vmStore.UpdateStatus(vm.ID, "running", vmIP)
+	s.vmStore.UpdateStatus(vm.ID, "running", finalIP)
 	s.taskStore.Update(taskID, "success", 100, "虚拟机已就绪")
 }
 

@@ -77,6 +77,17 @@
               <option value="bridge">Bridge</option>
             </select>
           </label>
+          <label>IP 分配
+            <select v-model="newForm.ipMode">
+              <option value="dhcp">DHCP（自动）</option>
+              <option value="static">静态 IP</option>
+            </select>
+          </label>
+          <template v-if="newForm.ipMode === 'static'">
+            <label>IP 地址（CIDR）<input v-model="newForm.IP" type="text" placeholder="192.168.1.100/24" required></label>
+            <label>网关<input v-model="newForm.Gateway" type="text" placeholder="192.168.1.1" required></label>
+            <label>DNS<input v-model="newForm.DNS" type="text" placeholder="8.8.8.8（留空默认）"></label>
+          </template>
           <div class="grid">
             <button type="submit" :disabled="creating" :aria-busy="creating">创建</button>
             <a href="#/" role="button" class="secondary outline">取消</a>

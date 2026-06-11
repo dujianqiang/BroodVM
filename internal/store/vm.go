@@ -13,7 +13,9 @@ type VM struct {
 	NetworkType string
 	MAC         string
 	VNCPort     int
-	IP          string
+	IP          string // 静态时为 CIDR（192.168.1.100/24），DHCP 时为裸 IP
+	Gateway     string
+	DNS         string
 	Status      string
 	CreatedAt   time.Time
 }
@@ -24,10 +26,10 @@ func NewVMStore(db *DB) *VMStore { return &VMStore{db: db} }
 
 func (s *VMStore) Create(vm *VM) error {
 	_, err := s.db.Exec(
-		`INSERT INTO vms (id,name,vcpu,memory_gb,disk_gb,network_type,mac,vnc_port,ip,status,created_at)
-		 VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+		`INSERT INTO vms (id,name,vcpu,memory_gb,disk_gb,network_type,mac,vnc_port,ip,gateway,dns,status,created_at)
+		 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		vm.ID, vm.Name, vm.VCPU, vm.MemoryGB, vm.DiskGB,
-		vm.NetworkType, vm.MAC, vm.VNCPort, vm.IP, vm.Status,
+		vm.NetworkType, vm.MAC, vm.VNCPort, vm.IP, vm.Gateway, vm.DNS, vm.Status,
 		vm.CreatedAt.Format(time.RFC3339),
 	)
 	return err
@@ -35,14 +37,14 @@ func (s *VMStore) Create(vm *VM) error {
 
 func (s *VMStore) Get(id string) (*VM, error) {
 	row := s.db.QueryRow(
-		`SELECT id,name,vcpu,memory_gb,disk_gb,network_type,mac,vnc_port,ip,status,created_at
+		`SELECT id,name,vcpu,memory_gb,disk_gb,network_type,mac,vnc_port,ip,gateway,dns,status,created_at
 		 FROM vms WHERE id=?`, id)
 	return scanVM(row)
 }
 
 func (s *VMStore) List() ([]*VM, error) {
 	rows, err := s.db.Query(
-		`SELECT id,name,vcpu,memory_gb,disk_gb,network_type,mac,vnc_port,ip,status,created_at
+		`SELECT id,name,vcpu,memory_gb,disk_gb,network_type,mac,vnc_port,ip,gateway,dns,status,created_at
 		 FROM vms WHERE status != 'deleted' ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
@@ -89,7 +91,7 @@ func scanVM(s rowScanner) (*VM, error) {
 	var createdAt string
 	err := s.Scan(
 		&vm.ID, &vm.Name, &vm.VCPU, &vm.MemoryGB, &vm.DiskGB,
-		&vm.NetworkType, &vm.MAC, &vm.VNCPort, &vm.IP, &vm.Status, &createdAt,
+		&vm.NetworkType, &vm.MAC, &vm.VNCPort, &vm.IP, &vm.Gateway, &vm.DNS, &vm.Status, &createdAt,
 	)
 	if err != nil {
 		return nil, err

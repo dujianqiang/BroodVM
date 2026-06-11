@@ -38,11 +38,20 @@ func migrate(db *sql.DB) error {
 			mac          TEXT NOT NULL,
 			vnc_port     INTEGER NOT NULL,
 			ip           TEXT NOT NULL DEFAULT '',
+			gateway      TEXT NOT NULL DEFAULT '',
+			dns          TEXT NOT NULL DEFAULT '',
 			status       TEXT NOT NULL,
 			created_at   TEXT NOT NULL
 		)`,
 	); err != nil {
 		return err
+	}
+	// 兼容旧数据库：按需添加列（重复执行安全）
+	for _, col := range []string{
+		`ALTER TABLE vms ADD COLUMN gateway TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE vms ADD COLUMN dns     TEXT NOT NULL DEFAULT ''`,
+	} {
+		db.Exec(col) //nolint:errcheck // 列已存在时会报错，属正常情况，忽略
 	}
 	_, err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS tasks (

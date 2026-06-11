@@ -11,7 +11,7 @@ createApp({
 
     const vms = ref([]);
 
-    const newForm = ref({ Name: '', VCPU: 2, MemoryGB: 4, DiskGB: 20, NetworkType: 'nat' });
+    const newForm = ref({ Name: '', VCPU: 2, MemoryGB: 4, DiskGB: 20, NetworkType: 'nat', ipMode: 'dhcp', IP: '', Gateway: '', DNS: '' });
     const creating = ref(false);
     const createProgress = ref({ visible: false, value: 0, message: '' });
 
@@ -57,7 +57,7 @@ createApp({
         return;
       }
       if (hash === '/vms/new') {
-        newForm.value = { Name: '', VCPU: 2, MemoryGB: 4, DiskGB: 20, NetworkType: 'nat' };
+        newForm.value = { Name: '', VCPU: 2, MemoryGB: 4, DiskGB: 20, NetworkType: 'nat', ipMode: 'dhcp', IP: '', Gateway: '', DNS: '' };
         creating.value = false;
         createProgress.value = { visible: false, value: 0, message: '' };
         view.value = 'new';
@@ -139,7 +139,9 @@ createApp({
       creating.value = true;
       createProgress.value = { visible: false, value: 0, message: '' };
       try {
-        const r = await request('POST', '/vms', newForm.value);
+        const { ipMode, ...form } = newForm.value;
+        const body = ipMode === 'dhcp' ? { ...form, IP: '', Gateway: '', DNS: '' } : form;
+        const r = await request('POST', '/vms', body);
         createProgress.value = { visible: true, value: 0, message: '任务已提交...' };
         pollTask(r.task_id, t => {
           createProgress.value = { visible: true, value: t.Progress, message: t.Message };
