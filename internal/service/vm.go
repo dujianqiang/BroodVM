@@ -3,10 +3,8 @@ package service
 import (
 	"bytes"
 	"crypto/rand"
-	"encoding/binary"
 	"fmt"
 	"log"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,7 +15,6 @@ import (
 	"github.com/dujianqiang/broodvm/internal/cloudinit"
 	"github.com/dujianqiang/broodvm/internal/config"
 	lv "github.com/dujianqiang/broodvm/internal/libvirt"
-	"github.com/dujianqiang/broodvm/internal/netutil"
 	"github.com/dujianqiang/broodvm/internal/store"
 	"github.com/google/uuid"
 )
@@ -75,15 +72,17 @@ func (s *VMService) Create(req CreateVMReq) (string, error) {
 	}
 
 	if req.NetworkType == "bridge" && req.IP == "" {
-		ip, gw, dns, err := s.findFreePoolIP()
-		if err != nil {
-			s.mu.Unlock()
-			return "", err
-		}
-		req.IP = ip
-		req.Gateway = gw
-		if req.DNS == "" {
-			req.DNS = dns
+		if len(s.cfg.Host.IPPool.IPs) > 0 {
+			ip, err := s.findFreePoolIP()
+			if err != nil {
+				s.mu.Unlock()
+				return "", err
+			}
+			req.IP = ip
+			req.Gateway = s.cfg.Host.IPPool.Gateway
+			if req.DNS == "" {
+				req.DNS = s.cfg.Host.IPPool.DNS
+			}
 		}
 	}
 
@@ -441,12 +440,11 @@ func (s *VMService) SyncRunningIPs() {
 		}
 	}
 }
-// findFreePoolIP 在 s.mu 持有期间调用，返回可用的 IP（CIDR）、网关和 DNS。
-// ip_pool.ips 非空时走列表逻辑；为空时自动从网桥接口检测网段并分配。
-func (s *VMService) findFreePoolIP() (ip, gateway, dns string, err error) {
+// findFreePoolIP 在 s.mu 持有期间调用，返回池中第一个未被活跃 VM 占用的 IP。
+func (s *VMService) findFreePoolIP() (string, error) {
 	vms, err := s.vmStore.List()
 	if err != nil {
-		return "", "", "", err
+		return "", err
 	}
 	used := make(map[string]bool, len(vms))
 	for _, vm := range vms {
@@ -454,67 +452,12 @@ func (s *VMService) findFreePoolIP() (ip, gateway, dns string, err error) {
 			used[vm.IP] = true
 		}
 	}
-
-	dns = s.cfg.Host.IPPool.DNS
-	if dns == "" {
-		dns = "8.8.8.8"
-	}
-
-	// 手动配置了 IP 列表 → 沿用列表逻辑
-	if len(s.cfg.Host.IPPool.IPs) > 0 {
-		for _, poolIP := range s.cfg.Host.IPPool.IPs {
-			if !used[poolIP] {
-				return poolIP, s.cfg.Host.IPPool.Gateway, dns, nil
-			}
-		}
-		return "", "", "", fmt.Errorf("IP 池已耗尽，请扩充配置")
-	}
-
-	// 自动检测模式：从网桥接口读取网段
-	bridgeName := s.cfg.Host.Bridge
-	bridgeIP, subnet, err := netutil.BridgeSubnet(bridgeName)
-	if err != nil {
-		return "", "", "", fmt.Errorf("无法读取网桥 %s 的网络信息: %w", bridgeName, err)
-	}
-
-	var gwIP net.IP
-	if s.cfg.Host.IPPool.Gateway != "" {
-		parsed := net.ParseIP(s.cfg.Host.IPPool.Gateway)
-		if parsed == nil {
-			return "", "", "", fmt.Errorf("ip_pool.gateway 配置无效: %q", s.cfg.Host.IPPool.Gateway)
-		}
-		gwIP = parsed.To4()
-		if gwIP == nil {
-			return "", "", "", fmt.Errorf("ip_pool.gateway 必须为 IPv4 地址: %q", s.cfg.Host.IPPool.Gateway)
-		}
-		gateway = s.cfg.Host.IPPool.Gateway
-	} else {
-		gwIP, err = netutil.BridgeGateway(bridgeName)
-		if err != nil {
-			return "", "", "", fmt.Errorf("无法自动检测网关，请在 ip_pool.gateway 中手动配置: %w", err)
-		}
-		gateway = gwIP.String()
-	}
-
-	ones, bits := subnet.Mask.Size()
-	if ones < 16 {
-		return "", "", "", fmt.Errorf("网桥子网 /%d 过大，自动分配仅支持 /16 及以上的子网", ones)
-	}
-	total := 1 << uint(bits-ones)
-	base := binary.BigEndian.Uint32(subnet.IP.To4())
-
-	for i := 1; i < total-1; i++ {
-		candidate := make(net.IP, 4)
-		binary.BigEndian.PutUint32(candidate, base+uint32(i))
-		if candidate.Equal(bridgeIP) || candidate.Equal(gwIP) {
-			continue
-		}
-		cidr := fmt.Sprintf("%s/%d", candidate.String(), ones)
-		if !used[cidr] {
-			return cidr, gateway, dns, nil
+	for _, ip := range s.cfg.Host.IPPool.IPs {
+		if !used[ip] {
+			return ip, nil
 		}
 	}
-	return "", "", "", fmt.Errorf("IP 池已耗尽，请扩充配置")
+	return "", fmt.Errorf("IP 池已耗尽，请扩充配置")
 }
 
 func (s *VMService) GetTask(id string) (*store.Task, error) { return s.taskStore.Get(id) }

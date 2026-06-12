@@ -1,7 +1,6 @@
 package service_test
 
 import (
-	"strings"
 	"testing"
 	"time"
 
@@ -268,23 +267,5 @@ func TestCreate_BridgeIPReuseAfterError(t *testing.T) {
 	}
 	if vm2.IP != "192.168.1.100/24" {
 		t.Errorf("vm-b2 ip = %q, want 192.168.1.100/24", vm2.IP)
-	}
-}
-
-func TestCreate_BridgeAutoDetect_InvalidInterface(t *testing.T) {
-	vs, ts, mock, cfg := newTestDeps(t)
-	cfg.Host.Bridge = "nonexistent-br-xyz"
-	// ip_pool.ips 为空 → 触发自动检测
-	cfg.Host.IPPool.Gateway = "192.168.56.2"
-	svc := service.NewVMService(cfg, vs, ts, mock, "/tmp/seed.img")
-
-	_, err := svc.Create(service.CreateVMReq{
-		Name: "vm-auto", VCPU: 1, MemoryGB: 1, DiskGB: 10, NetworkType: "bridge",
-	})
-	if err == nil {
-		t.Fatal("expected error for nonexistent bridge interface")
-	}
-	if !strings.Contains(err.Error(), "无法读取网桥") {
-		t.Errorf("unexpected error message: %v", err)
 	}
 }
