@@ -484,6 +484,9 @@ func (s *VMService) findFreePoolIP() (ip, gateway, dns string, err error) {
 			return "", "", "", fmt.Errorf("ip_pool.gateway 配置无效: %q", s.cfg.Host.IPPool.Gateway)
 		}
 		gwIP = parsed.To4()
+		if gwIP == nil {
+			return "", "", "", fmt.Errorf("ip_pool.gateway 必须为 IPv4 地址: %q", s.cfg.Host.IPPool.Gateway)
+		}
 		gateway = s.cfg.Host.IPPool.Gateway
 	} else {
 		gwIP, err = netutil.BridgeGateway(bridgeName)
@@ -493,8 +496,10 @@ func (s *VMService) findFreePoolIP() (ip, gateway, dns string, err error) {
 		gateway = gwIP.String()
 	}
 
-	// 枚举子网所有主机地址，预期用于 /24 及以上的小子网；更大子网性能可能下降。
 	ones, bits := subnet.Mask.Size()
+	if ones < 16 {
+		return "", "", "", fmt.Errorf("网桥子网 /%d 过大，自动分配仅支持 /16 及以上的子网", ones)
+	}
 	total := 1 << uint(bits-ones)
 	base := binary.BigEndian.Uint32(subnet.IP.To4())
 
